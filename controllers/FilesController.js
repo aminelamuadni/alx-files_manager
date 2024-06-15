@@ -3,8 +3,11 @@ const path = require('path');
 const mime = require('mime-types');
 const { ObjectId } = require('mongodb');
 const { v4: uuidv4 } = require('uuid');
+const Bull = require('bull');
 const dbClient = require('../utils/db');
 const redisClient = require('../utils/redis');
+
+const fileQueue = new Bull('fileQueue', { redis: { port: 6379, host: '127.0.0.1' } });
 
 class FilesController {
   static async postUpload(req, res) {
@@ -18,7 +21,10 @@ class FilesController {
     const {
       name, type, parentId = '0', isPublic = false, data,
     } = req.body;
-    if (!name) return res.status(400).json({ error: 'Missing name' });
+
+    if (!name) {
+      return res.status(400).json({ error: 'Missing name' });
+    }
     if (!type || !['folder', 'file', 'image'].includes(type)) {
       return res.status(400).json({ error: 'Missing type' });
     }
@@ -26,36 +32,49 @@ class FilesController {
       return res.status(400).json({ error: 'Missing data' });
     }
 
-    // Validate parent ID if provided
     if (parentId !== '0') {
       const parent = await dbClient.db.collection('files').findOne({ _id: new ObjectId(parentId) });
-      if (!parent) return res.status(400).json({ error: 'Parent not found' });
-      if (parent.type !== 'folder') return res.status(400).json({ error: 'Parent is not a folder' });
+      if (!parent) {
+        return res.status(400).json({ error: 'Parent not found' });
+      }
+      if (parent.type !== 'folder') {
+        return res.status(400).json({ error: 'Parent is not a folder' });
+      }
     }
 
-    // Handling file storage
-    let filePath = '';
+    const folderPath = process.env.FOLDER_PATH || '/tmp/files_manager';
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+
+    const filename = uuidv4();
+    const filePath = path.join(folderPath, filename);
     if (type === 'file' || type === 'image') {
-      const folderPath = process.env.FOLDER_PATH || '/tmp/files_manager';
-      if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
-      const filename = uuidv4();
-      filePath = path.join(folderPath, filename);
       fs.writeFileSync(filePath, Buffer.from(data, 'base64'));
     }
 
-    // Save file metadata
     const newFile = {
       userId: new ObjectId(userId),
       name,
       type,
       isPublic,
       parentId: parentId !== '0' ? new ObjectId(parentId) : '0',
-      localPath: filePath,
+      localPath: type === 'folder' ? '' : filePath,
     };
+
     const result = await dbClient.db.collection('files').insertOne(newFile);
 
+    // If the file is an image, enqueue a job to generate thumbnails
+    if (type === 'image') {
+      fileQueue.add({
+        userId: userId.toString(),
+        fileId: result.insertedId.toString(),
+        filePath,
+      });
+    }
+
     return res.status(201).json({
-      id: result.insertedId,
+      id: result.insertedId.toString(),
       ...newFile,
     });
   }
@@ -145,37 +164,40 @@ class FilesController {
 
   static async getFile(req, res) {
     const fileId = req.params.id;
+    const { size } = req.query; // This will be used to fetch specific thumbnail sizes
     const token = req.headers['x-token'];
     const userId = await redisClient.get(`auth_${token}`);
 
+    // Verify the user is authenticated and authorized to access the file
     const file = await dbClient.db.collection('files').findOne({ _id: new ObjectId(fileId) });
     if (!file) {
       return res.status(404).json({ error: 'Not found' });
     }
-
     if (file.type === 'folder') {
       return res.status(400).json({ error: "A folder doesn't have content" });
     }
-
     if (!file.isPublic && (!userId || file.userId.toString() !== userId)) {
       return res.status(404).json({ error: 'Not found' });
     }
 
-    if (!fs.existsSync(file.localPath)) {
+    // Append the requested size to the filename if a specific size is requested
+    let filePath = file.localPath;
+    if (size && ['100', '250', '500'].includes(size)) {
+      filePath = `${filePath}_${size}`;
+    }
+
+    // Check if the file (or its thumbnail) exists locally
+    if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Not found' });
     }
 
+    // Serve the file with the appropriate MIME type
     const mimeType = mime.lookup(file.name) || 'application/octet-stream';
     res.setHeader('Content-Type', mimeType);
-
-    // Create a read stream and pipe it to the response
-    const readStream = fs.createReadStream(file.localPath);
-    readStream.on('error', () => {
-      res.status(404).json({ error: 'Error reading file' });
-    });
+    const readStream = fs.createReadStream(filePath);
+    readStream.on('error', () => res.status(500).json({ error: 'Error reading file' }));
     readStream.pipe(res);
-
-    return undefined;
+    return res;
   }
 }
 
