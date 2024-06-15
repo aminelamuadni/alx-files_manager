@@ -1,6 +1,6 @@
-const { ObjectId } = require('mongodb');
 const fs = require('fs');
 const path = require('path');
+const { ObjectId } = require('mongodb');
 const { v4: uuidv4 } = require('uuid');
 const dbClient = require('../utils/db');
 const redisClient = require('../utils/redis');
@@ -19,45 +19,43 @@ class FilesController {
     } = req.body;
     if (!name) return res.status(400).json({ error: 'Missing name' });
     if (!type || !['folder', 'file', 'image'].includes(type)) {
-      return res.status(400).json({ error: 'Missing or invalid type' });
+      return res.status(400).json({ error: 'Missing type' });
     }
-    if (type !== 'folder' && !data) {
+    if (['file', 'image'].includes(type) && !data) {
       return res.status(400).json({ error: 'Missing data' });
     }
 
-    let parent = null;
+    // Validate parent ID if provided
     if (parentId !== '0') {
-      parent = await dbClient.db.collection('files').findOne({ _id: new ObjectId(parentId) });
+      const parent = await dbClient.db.collection('files').findOne({ _id: new ObjectId(parentId) });
       if (!parent) return res.status(400).json({ error: 'Parent not found' });
       if (parent.type !== 'folder') return res.status(400).json({ error: 'Parent is not a folder' });
     }
 
-    const fileDocument = {
-      userId: new ObjectId(userId),
-      name,
-      type,
-      parentId,
-      isPublic,
-      localPath: '',
-    };
-
-    if (type !== 'folder') {
+    // Handling file storage
+    let filePath = '';
+    if (type === 'file' || type === 'image') {
       const folderPath = process.env.FOLDER_PATH || '/tmp/files_manager';
       if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
       const filename = uuidv4();
-      const filePath = path.join(folderPath, filename);
+      filePath = path.join(folderPath, filename);
       fs.writeFileSync(filePath, Buffer.from(data, 'base64'));
-      fileDocument.localPath = filePath;
     }
 
-    const result = await dbClient.db.collection('files').insertOne(fileDocument);
+    // Save file metadata
+    const newFile = {
+      userId: new ObjectId(userId),
+      name,
+      type,
+      isPublic,
+      parentId: parentId !== '0' ? new ObjectId(parentId) : '0',
+      localPath: filePath,
+    };
+    const result = await dbClient.db.collection('files').insertOne(newFile);
+
     return res.status(201).json({
       id: result.insertedId,
-      userId: fileDocument.userId.toString(),
-      name: fileDocument.name,
-      type: fileDocument.type,
-      parentId: fileDocument.parentId,
-      isPublic: fileDocument.isPublic,
+      ...newFile,
     });
   }
 }
