@@ -58,6 +58,47 @@ class FilesController {
       ...newFile,
     });
   }
+
+  static async getShow(req, res) {
+    const token = req.headers['x-token'];
+    const userId = await redisClient.get(`auth_${token}`);
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const file = await dbClient.db.collection('files').findOne({
+      _id: new ObjectId(req.params.id),
+      userId: new ObjectId(userId),
+    });
+
+    if (!file) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    return res.status(200).json(file);
+  }
+
+  static async getIndex(req, res) {
+    const token = req.headers['x-token'];
+    const userId = await redisClient.get(`auth_${token}`);
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const parentId = req.query.parentId || '0';
+    const page = parseInt(req.query.page || '0');
+    const limit = 20;
+
+    const files = await dbClient.db.collection('files').find({
+      userId: new ObjectId(userId),
+      parentId: parentId !== '0' ? new ObjectId(parentId) : '0',
+    }).skip(page * limit).limit(limit)
+      .toArray();
+
+    return res.status(200).json(files);
+  }
 }
 
 module.exports = FilesController;
