@@ -19,7 +19,7 @@ describe('files Controller', () => {
       });
   });
 
-  it('pOST /files should upload a new file', () => new Promise((done) => {
+  it('POST /files should upload a new file', () => new Promise((done) => {
     chai.request(app)
       .post('/files')
       .set('X-Token', token)
@@ -32,7 +32,7 @@ describe('files Controller', () => {
       });
   }));
 
-  it('gET /files/:id should retrieve the file', () => new Promise((done) => {
+  it('GET /files/:id should retrieve the file', () => new Promise((done) => {
     chai.request(app)
       .get(`/files/${fileId}`)
       .set('X-Token', token)
@@ -65,7 +65,7 @@ describe('files Controller', () => {
       });
   }));
 
-  it('gET /files/:id/data should retrieve the file data', () => new Promise((done) => {
+  it('GET /files/:id/data should retrieve the file data', () => new Promise((done) => {
     chai.request(app)
       .get(`/files/${fileId}/data`)
       .set('X-Token', token)
