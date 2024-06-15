@@ -9,7 +9,7 @@ const { expect } = chai;
 describe('users Controller', () => {
   let token;
 
-  it('pOST /users should create a new user', () => new Promise((done) => {
+  it('POST /users should create a new user', () => new Promise((done) => {
     const email = `test-${uuidv4()}@example.com`;
     chai.request(app)
       .post('/users')
@@ -21,7 +21,7 @@ describe('users Controller', () => {
       });
   }));
 
-  it('gET /connect should authenticate the user', () => new Promise((done) => {
+  it('GET /connect should authenticate the user', () => new Promise((done) => {
     const email = `test-${uuidv4()}@example.com`;
     chai.request(app)
       .post('/users')
@@ -39,7 +39,7 @@ describe('users Controller', () => {
       });
   }));
 
-  it('gET /users/me should return user data', () => new Promise((done) => {
+  it('GET /users/me should return user data', () => new Promise((done) => {
     chai.request(app)
       .get('/users/me')
       .set('X-Token', token)
