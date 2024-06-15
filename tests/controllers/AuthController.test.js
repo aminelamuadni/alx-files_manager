@@ -25,7 +25,7 @@ describe('auth Controller', () => {
       });
   });
 
-  it('gET /connect should authenticate the user', () => new Promise((done) => {
+  it('GET /connect should authenticate the user', () => new Promise((done) => {
     chai.request(app)
       .get('/connect')
       .set('Authorization', `Basic ${Buffer.from(`${email}:testPass123`).toString('base64')}`)
@@ -36,7 +36,7 @@ describe('auth Controller', () => {
       });
   }));
 
-  it('gET /disconnect should log out the user', () => new Promise((done) => {
+  it('GET /disconnect should log out the user', () => new Promise((done) => {
     chai.request(app)
       .get('/disconnect')
       .set('X-Token', token)
