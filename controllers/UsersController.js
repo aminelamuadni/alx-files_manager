@@ -5,7 +5,7 @@ class UsersController {
   static async postNew(req, res) {
     const { email, password } = req.body;
 
-    // Validate input
+    // Check for missing email or password
     if (!email) {
       return res.status(400).json({ error: 'Missing email' });
     }
@@ -13,24 +13,23 @@ class UsersController {
       return res.status(400).json({ error: 'Missing password' });
     }
 
-    // Check if email already exists
+    // Check if the email already exists
     const userExists = await dbClient.db.collection('users').findOne({ email });
     if (userExists) {
       return res.status(400).json({ error: 'Already exist' });
     }
 
-    // Hash password
+    // Hash the password
     const hashedPassword = sha1(password);
 
-    // Create new user
-    const newUser = {
+    // Insert the new user
+    const result = await dbClient.db.collection('users').insertOne({
       email,
       password: hashedPassword,
-    };
-    const result = await dbClient.db.collection('users').insertOne(newUser);
+    });
 
-    // Return new user info
-    return res.status(201).json({ id: result.insertedId, email: newUser.email });
+    // Return the new user's email and MongoDB ID
+    return res.status(201).json({ id: result.insertedId, email });
   }
 }
 
